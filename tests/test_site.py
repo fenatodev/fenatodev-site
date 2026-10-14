@@ -187,6 +187,27 @@ def test_demo_disclaimers_present() -> None:
     assert "Nao implicam clientes atendidos" in HTML or "Não implicam clientes atendidos" in HTML
 
 
+def test_root_allowlist() -> None:
+    """Root must not contain stray site files or unexpected directories.
+
+    Only public/, tests/, .github/, README.md and .git are allowed at the
+    repository root. No HTML, CSS, or SVG files should sit outside public/.
+    Tool caches (e.g. .pytest_cache, __pycache__) are ignored.
+    """
+    root_entries = sorted(entry.name for entry in ROOT.iterdir())
+    allowed_root = {".git", ".github", "README.md", "public", "tests"}
+    # Ignore tool-generated caches that start with a dot but aren't tracked dirs
+    tool_cache_prefixes = (".pytest_cache", "__pycache__", ".mypy_cache", ".ruff_cache")
+    for entry in root_entries:
+        if entry.startswith(tool_cache_prefixes):
+            continue
+        assert entry in allowed_root, f"Unexpected root entry: {entry}"
+    # Ensure no site asset files leak to the root
+    for ext in (".html", ".css", ".svg"):
+        stray = [f for f in ROOT.iterdir() if f.is_file() and f.name.endswith(ext)]
+        assert not stray, f"Stray {ext} files at root: {[p.name for p in stray]}"
+
+
 def test_accessibility_rules() -> None:
     assert any(
         a.get("href") == "#conteudo" and a.get("class") == "skip-link"
