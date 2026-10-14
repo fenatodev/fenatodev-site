@@ -1,0 +1,52 @@
+name: Validate static site
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: static-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test runner
+        run: python -m pip install --disable-pip-version-check pytest==8.3.5
+
+      - name: Run site regression tests
+        run: python -m pytest -q tests/
+
+      - name: Fail closed on unexpected published files
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          folder = Path("public")
+          approved = {"index.html", "styles.css", "favicon.svg", "_headers"}
+          assert folder.is_dir() and not folder.is_symlink()
+          observed = {p.name for p in folder.iterdir()}
+          assert observed == approved, f"Unexpected public output: {sorted(observed)}"
+          assert all(p.is_file() and not p.is_symlink() for p in folder.iterdir())
+          headers = (folder / "_headers").read_text(encoding="utf-8")
+          for required in ("frame-ancestors 'none'", "X-Frame-Options: DENY",
+                           "X-Content-Type-Options: nosniff", "Permissions-Policy:"):
+              assert required in headers, required
+          print("STATIC_SITE_OUTPUT=PASS deploy_performed=false")
+          PY
